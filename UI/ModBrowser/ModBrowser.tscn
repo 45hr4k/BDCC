@@ -103,6 +103,15 @@ rect_min_size = Vector2( 0, 30 )
 size_flags_vertical = 3
 text = "Oldest first"
 
+[node name="OnlyPinnedCheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/HFlowContainer"]
+margin_left = 281.0
+margin_right = 389.0
+margin_bottom = 30.0
+rect_min_size = Vector2( 0, 30 )
+size_flags_vertical = 3
+hint_tooltip = "Only show the mods you have pinned"
+text = "Only pinned"
+
 [node name="ModSearch" type="LineEdit" parent="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer"]
 margin_top = 52.0
 margin_right = 411.0
@@ -163,6 +172,14 @@ margin_bottom = 40.0
 rect_min_size = Vector2( 0, 40 )
 text = "Download mod"
 
+[node name="PinModButton" type="Button" parent="VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/HFlowContainer"]
+margin_left = 112.0
+margin_right = 182.0
+margin_bottom = 40.0
+rect_min_size = Vector2( 70, 40 )
+disabled = true
+text = "Pin"
+
 [node name="RichTextLabel" type="RichTextLabel" parent="VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer"]
 margin_top = 44.0
 margin_right = 837.0
@@ -202,6 +219,8 @@ dialog_autowrap = true
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/HFlowContainer/SortNameButton" to="." method="_on_SortNameButton_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/HFlowContainer/SortNewestFirstButton" to="." method="_on_SortNewestFirstButton_pressed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/HFlowContainer/SortOldestFirstButton" to="." method="_on_SortOldestFirstButton_pressed"]
+[connection signal="toggled" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/HFlowContainer/OnlyPinnedCheckBox" to="." method="_on_OnlyPinnedCheckBox_toggled"]
 [connection signal="text_changed" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/ModSearch" to="." method="_on_ModSearch_text_changed"]
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/HFlowContainer/DownloadModButton" to="." method="_on_DownloadModButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/HFlowContainer/PinModButton" to="." method="_on_PinModButton_pressed"]
 [connection signal="meta_clicked" from="VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/RichTextLabel" to="." method="_on_RichTextLabel_meta_clicked"]

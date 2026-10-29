@@ -7,6 +7,7 @@ onready var modList = $VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/
 onready var modDescriptionLabel = $VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/RichTextLabel
 onready var downloadingContainer = $DownloadingContrainer
 onready var messageDialog = $MessageDialog
+onready var pinModButton = $VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/HFlowContainer/PinModButton
 
 var allMods = []
 var pickedModEntry:ModEntry
@@ -15,10 +16,73 @@ var visualModEntries = []
 var sortType = "newest" #newest, oldest, name
 var downloadedMods = false
 
+# Pinned mods are remembered by their name
+const pinnedModsPath = "user://modBrowserPinned.json"
+var pinnedModNames:Array = []
+var showOnlyPinned:bool = false
+var searchText:String = ""
+
 signal closePressed
 
 func _ready():
-	pass
+	loadPinnedMods()
+
+func loadPinnedMods():
+	pinnedModNames.clear()
+	var file = File.new()
+	if(!file.file_exists(pinnedModsPath)):
+		return
+	if(file.open(pinnedModsPath, File.READ) != OK):
+		Log.printerr("[ModBrowser] Couldn't open "+pinnedModsPath)
+		return
+	var jsonResult = JSON.parse(file.get_as_text())
+	file.close()
+	if(jsonResult.error != OK || !(jsonResult.result is Array)):
+		Log.printerr("[ModBrowser] Couldn't parse "+pinnedModsPath)
+		return
+	for modName in jsonResult.result:
+		if(modName is String && !pinnedModNames.has(modName)):
+			pinnedModNames.append(modName)
+
+func savePinnedMods():
+	var file = File.new()
+	if(file.open(pinnedModsPath, File.WRITE) != OK):
+		Log.printerr("[ModBrowser] Couldn't save "+pinnedModsPath)
+		return
+	file.store_string(JSON.print(pinnedModNames, "\t"))
+	file.close()
+
+func isModPinned(modEntry) -> bool:
+	return modEntry != null && pinnedModNames.has(modEntry.name)
+
+func togglePinned(modEntry):
+	if(modEntry == null):
+		return
+	if(isModPinned(modEntry)):
+		pinnedModNames.erase(modEntry.name)
+	else:
+		pinnedModNames.append(modEntry.name)
+	savePinnedMods()
+	updateModList()
+	updatePickedModEntry()
+
+# Applies search + pinned filter, pinned mods go first (keeping the current sort order)
+func getFilteredMods() -> Array:
+	var pinned = []
+	var others = []
+	for mod in allMods:
+		if(searchText != ""):
+			if searchText.begins_with("@"):
+				if mod.author.to_lower().find(searchText.to_lower().trim_prefix("@")) == -1:
+					continue
+			else:
+				if !(searchText.to_lower() in mod.name.to_lower()):
+					continue
+		if(isModPinned(mod)):
+			pinned.append(mod)
+		elif(!showOnlyPinned):
+			others.append(mod)
+	return pinned + others
 
 func _on_ModBrowser_visibility_changed():
 	if(visible && !downloadedMods):
@@ -32,14 +96,21 @@ func resetMods():
 	Util.delete_children(modList)
 	allMods.clear()
 
-func updateModList(modsArray = allMods):
+func updateModList():
 	visualModEntries.clear()
 	Util.delete_children(modList)
+	var modsArray = getFilteredMods()
+	if(modsArray.empty() && showOnlyPinned && !allMods.empty()):
+		var emptyLabel = Label.new()
+		emptyLabel.text = "\nNo pinned mods found.\nUse the Pin button next to a mod to pin it."
+		emptyLabel.align = Label.ALIGN_CENTER
+		modList.add_child(emptyLabel)
 	for modEntry in modsArray:
 		var newBrowserEntry = modEntryScene.instance()
 		modList.add_child(newBrowserEntry)
-		newBrowserEntry.setModEntry(modEntry)
+		newBrowserEntry.setModEntry(modEntry, isModPinned(modEntry))
 		var _ok = newBrowserEntry.connect("onSelected", self, "onModEntrySelected")
+		var _ok2 = newBrowserEntry.connect("onPinToggled", self, "togglePinned")
 		if(modEntry == pickedModEntry):
 			newBrowserEntry.makeActive()
 		visualModEntries.append(newBrowserEntry)
@@ -101,10 +172,15 @@ func updatePickedModEntry():
 		else:
 			visualModEntry.makeInactive()
 	
+	pinModButton.disabled = (pickedModEntry == null)
+	pinModButton.text = "Unpin" if isModPinned(pickedModEntry) else "Pin"
+
 	if(pickedModEntry == null):
 		modDescriptionLabel.bbcode_text = "Select a mod on the left"
 	else:
 		var text = ""
+		if(isModPinned(pickedModEntry)):
+			text += "[color=#ffd980]Pinned[/color]\n"
 		text += "Name: "+str(pickedModEntry.name)+"\n"
 		text += "Author: "+str(pickedModEntry.author)+"\n"
 		text += "Mod version: "+str(pickedModEntry.modversion)+"\n"
@@ -202,15 +278,16 @@ func _on_RichTextLabel_meta_clicked(meta):
 
 func _on_ModSearch_text_changed(new_text: String):
 	if new_text.length() > 2:
-		var modsFound = []
-		for mod in allMods:
-			if new_text.begins_with("@"):
-				if mod.author.to_lower().find(new_text.to_lower().trim_prefix("@")) != -1:
-					modsFound.append(mod)
-			else:
-				if new_text.to_lower() in mod.name.to_lower():
-					modsFound.append(mod)
-		updateModList(modsFound)
-	if new_text.length() == 0:
+		searchText = new_text
 		updateModList()
+	if new_text.length() == 0:
+		searchText = ""
+		updateModList()
+
+func _on_OnlyPinnedCheckBox_toggled(button_pressed: bool):
+	showOnlyPinned = button_pressed
+	updateModList()
+
+func _on_PinModButton_pressed():
+	togglePinned(pickedModEntry)
 	

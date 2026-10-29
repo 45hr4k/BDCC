@@ -58,6 +58,14 @@ margin_right = 266.0
 margin_bottom = 41.0
 text = "Check online broken mods list"
 
+[node name="ModConflictsButton" type="Button" parent="VBoxContainer/Label"]
+margin_left = 276.0
+margin_top = -5.0
+margin_right = 476.0
+margin_bottom = 41.0
+hint_tooltip = "Find mods that overwrite each other or the game's files (e.g. missing body parts)"
+text = "Check mod conflicts"
+
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer"]
 margin_top = 52.0
 margin_right = 1280.0
@@ -406,6 +414,7 @@ unique_name_in_owner = true
 
 [connection signal="pressed" from="VBoxContainer/Label/DebugButton" to="." method="_on_DebugButton_pressed"]
 [connection signal="pressed" from="VBoxContainer/Label/CheckBrokenModsButton" to="." method="_on_CheckBrokenModsButton_pressed"]
+[connection signal="pressed" from="VBoxContainer/Label/ModConflictsButton" to="." method="_on_ModConflictsButton_pressed"]
 [connection signal="text_changed" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/orderhb/SearchLineEdit" to="." method="_on_search_text_changed"]
 [connection signal="item_selected" from="VBoxContainer/HBoxContainer/PanelContainer/VBoxContainer/OptionButton" to="." method="_on_OptionButton_item_selected"]
 [connection signal="meta_clicked" from="VBoxContainer/HBoxContainer/VBoxContainer/PanelContainer2/VBoxContainer/WarningLabel" to="." method="_on_RichTextLabel_meta_clicked"]
