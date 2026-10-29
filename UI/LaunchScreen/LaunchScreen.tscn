@@ -422,6 +422,7 @@ unique_name_in_owner = true
 [connection signal="pressed" from="VBoxContainer/HBoxContainer/VBoxContainer/HBoxContainer/WithModsButton" to="." method="_on_WithModsButton_pressed"]
 [connection signal="confirmed" from="ConfirmationDialog" to="." method="_on_ConfirmationDialog_confirmed"]
 [connection signal="closePressed" from="ModBrowser" to="." method="_on_ModBrowser_closePressed"]
+[connection signal="modFilesReplaced" from="ModBrowser" to="." method="_on_ModBrowser_modFilesReplaced"]
 [connection signal="onClose" from="TroubleshootingScreen" to="." method="_on_TroubleshootingScreen_onClose"]
 [connection signal="meta_clicked" from="BusyPanel/CenterContainer/PanelContainer/VBoxContainer/BusyLabel" to="." method="_on_BusyLabel_meta_clicked"]
 [connection signal="pressed" from="BusyPanel/CenterContainer/PanelContainer/VBoxContainer/BusyCloseButton" to="." method="_on_BusyCloseButton_pressed"]
