@@ -496,6 +496,26 @@ func _on_ModBrowser_closePressed():
 	checkModOrderAndFillData(GlobalRegistry.getRawModList())
 
 
+# A mod was updated in the mod browser, the new file takes the load order position (and disabled state) of the old one
+func _on_ModBrowser_modFilesReplaced(oldPaths:Array, newPath:String):
+	var hasNewPath = false
+	for modEntry in currentModOrder:
+		if(modEntry["path"] == newPath):
+			hasNewPath = true
+	
+	var newOrder = []
+	for modEntry in currentModOrder:
+		if(modEntry["path"] in oldPaths):
+			if(hasNewPath):
+				continue
+			modEntry["path"] = newPath
+			modEntry["name"] = newPath.get_file()
+			hasNewPath = true
+		newOrder.append(modEntry)
+	currentModOrder = newOrder
+	saveOrderIntoFile(currentModOrder)
+
+
 func _on_OpenModsFolder_pressed():
 	var _ok = Util.fixed_shell_open(ProjectSettings.globalize_path("user://mods"))
 

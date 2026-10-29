@@ -13,8 +13,6 @@ onready var downloadingContainer = $DownloadingContrainer
 onready var messageDialog = $MessageDialog
 onready var replaceDialog = $ReplaceDialog
 
-const modOrderPath = "user://modOrder.json"
-
 var allMods = []
 var pickedModEntry:ModEntry
 var visualModEntries = []
@@ -33,6 +31,7 @@ var replaceDialogOldFiles:Array = []
 const FILTERS = [["all", "All mods"], ["favorites", "Favorites"], ["installed", "Installed"], ["updates", "Updates"]]
 
 signal closePressed
+signal modFilesReplaced(oldPaths, newPath) # The launcher puts newPath at the load order position of the old files
 
 func _ready():
 	for filter in FILTERS:
@@ -171,7 +170,9 @@ func updatePickedModEntry():
 		var group = pickedModEntry.group
 		var status:String = ModBrowserState.getStatus(group)
 		favoriteButton.text = "Remove from favorites" if state.isFavorite(group) else "Add to favorites"
-		if(status in ["update", "duplicate"]):
+		if(!isLatestListing(pickedModEntry)):
+			downloadModButton.text = "Download older version"
+		elif(status in ["update", "duplicate"]):
 			downloadModButton.text = "Update mod"
 		elif(status == "installed"):
 			downloadModButton.text = "Download again"
@@ -217,9 +218,11 @@ func _on_DownloadModButton_pressed():
 
 	var fileName = pickedModEntry.download.get_file()
 	var oldFiles = []
-	if(pickedModEntry.group != null):
+	# An older listing never replaces anything, it would delete the newer version
+	if(pickedModEntry.group != null && isLatestListing(pickedModEntry)):
 		for fileData in pickedModEntry.group["files"]:
-			if(fileData["file"] != fileName):
+			# Windows file names ignore case, so "mod.zip" is the same file as "Mod.zip"
+			if(fileData["file"].to_lower() != fileName.to_lower()):
 				oldFiles.append(fileData["file"])
 
 	if(oldFiles.empty()):
@@ -280,21 +283,37 @@ func _on_HTTPRequestMod_request_completed(result, response_code, _headers, _body
 	var modsFolder = GlobalRegistry.getModsFolder()
 	var fileName = modEntry.download.get_file()
 	var finalPath = modsFolder.plus_file(fileName)
-	if(dir.file_exists(finalPath)):
-		var _ok = dir.remove(finalPath)
+	# Keep the file that is replaced until the new one is in place
+	var backupPath = finalPath+".old"
+	var hadOldFile = dir.file_exists(finalPath)
+	if(hadOldFile):
+		if(dir.file_exists(backupPath)):
+			var _ok = dir.remove(backupPath)
+		if(dir.rename(finalPath, backupPath) != OK):
+			var _ok = dir.remove(tempPath)
+			Log.printerr("[ModBrowser] Couldn't move "+finalPath+" out of the way")
+			showMessage("Couldn't save "+fileName)
+			return
 	if(dir.rename(tempPath, finalPath) != OK):
+		if(hadOldFile):
+			var _ok = dir.rename(backupPath, finalPath)
 		Log.printerr("[ModBrowser] Couldn't move "+tempPath+" to "+finalPath)
 		showMessage("Couldn't save "+fileName)
 		return
+	if(hadOldFile):
+		var _ok = dir.remove(backupPath)
 
 	var removedPaths = []
 	for oldFile in downloadOldFiles:
+		if(oldFile.to_lower() == fileName.to_lower()):
+			continue
 		var oldPath = modsFolder.plus_file(oldFile)
 		if(dir.remove(oldPath) == OK):
 			removedPaths.append(oldPath)
 		else:
 			Log.printerr("[ModBrowser] Couldn't delete the old mod file "+oldPath)
-	replaceInModOrder(removedPaths, finalPath)
+	if(!removedPaths.empty()):
+		emit_signal("modFilesReplaced", removedPaths, finalPath)
 
 	if(modEntry.group != null):
 		state.recordDownload(modEntry.group, fileName, modEntry.modversion)
@@ -307,30 +326,6 @@ func _on_HTTPRequestMod_request_completed(result, response_code, _headers, _body
 			removedFiles.append(removedPath.get_file())
 		Log.print("Replaced old mod files: "+str(removedFiles))
 		showMessage("Updated '"+modEntry.name+"'. Replaced:\n"+PoolStringArray(removedFiles).join("\n"))
-
-# The new file takes the load order position (and the disabled state) of the old one
-func replaceInModOrder(oldPaths:Array, newPath:String):
-	if(oldPaths.empty()):
-		return
-	var jsonResult = JSON.parse(Util.readFile(modOrderPath))
-	if(jsonResult.error != OK || !(jsonResult.result is Array)):
-		return
-
-	var hasNewPath = false
-	for modEntry in jsonResult.result:
-		if(modEntry is Dictionary && modEntry.get("path") == newPath):
-			hasNewPath = true
-
-	var newOrder = []
-	for modEntry in jsonResult.result:
-		if(modEntry is Dictionary && modEntry.get("path") in oldPaths):
-			if(hasNewPath):
-				continue
-			modEntry["path"] = newPath
-			hasNewPath = true
-		newOrder.append(modEntry)
-
-	Util.writeFile(modOrderPath, JSON.print(newOrder, "\t", true))
 
 func showMessage(text):
 	messageDialog.dialog_text = text

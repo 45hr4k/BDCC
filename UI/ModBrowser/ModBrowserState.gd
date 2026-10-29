@@ -3,15 +3,16 @@ extends Reference
 # Remembers favorite mods and which installed file belongs to which mod, so the mod browser can
 # show installed mods, offer updates and replace the old file instead of downloading a second copy next to it.
 # The version and the file name usually change between updates, so a mod is identified by its name
-# plus at least one shared author (different mods sometimes share the same name).
+# plus at least one shared author (different mods sometimes share the same name). Two listings with the
+# same name and version but a different file name (like a remix) are treated as different mods.
 
 const STATE_PATH = "user://modBrowser.json"
 
-var favorites:Array = [] # [{name, authors}]
+var favorites:Array = [] # [{name, authors, stem}]
 var installed:Array = [] # [{name, authors, file, version}] files that were downloaded by the browser
 
 # One group per mod, all listings of the same mod share it. Filled by buildGroups()
-# {name, nname, authors, latestVersion, latestFile, latestIndex, files:[{file, version}]}
+# {name, nname, authors, stems, latestVersion, latestFile, latestIndex, files:[{file, version, upToDate}]}
 var groups:Array = []
 
 var versionRegex:RegEx
@@ -54,6 +55,30 @@ static func cleanVersion(text:String) -> String:
 		text = text.substr(1)
 	return text
 
+# "0.9.7fix1" -> [0, 9, 7, 1]
+static func versionNumbers(text:String) -> Array:
+	var result:Array = []
+	var current:String = ""
+	for c in cleanVersion(text) + " ":
+		if(c >= "0" && c <= "9"):
+			current += c
+		elif(current != ""):
+			result.append(int(current))
+			current = ""
+	return result
+
+static func isVersionAtLeast(version:String, otherVersion:String) -> bool:
+	var numbers:Array = versionNumbers(version)
+	var otherNumbers:Array = versionNumbers(otherVersion)
+	if(numbers.empty() || otherNumbers.empty()):
+		return cleanVersion(version) == cleanVersion(otherVersion)
+	for i in range(max(numbers.size(), otherNumbers.size())):
+		var number:int = numbers[i] if i < numbers.size() else 0
+		var otherNumber:int = otherNumbers[i] if i < otherNumbers.size() else 0
+		if(number != otherNumber):
+			return number > otherNumber
+	return true
+
 # "SongsHoofySpecies_v0.9.7fix1.zip" -> "songshoofyspecies"
 func fileStem(file:String) -> String:
 	return normName(versionRegex.sub(file.get_basename(), ""))
@@ -65,13 +90,18 @@ func buildGroups(modEntries:Array):
 	for modEntry in sortedEntries:
 		var nname:String = normName(modEntry.name)
 		var authors:Array = splitAuthors(modEntry.author)
-		var group = findGroup(nname, authors)
+		var stem:String = fileStem(modEntry.download.get_file())
+		var group = findGroup(nname, authors, stem)
+		if(group != null && !(stem in group["stems"]) && cleanVersion(modEntry.modversion) == cleanVersion(group["latestVersion"])):
+			group = null
 		if(group == null):
-			group = {name = modEntry.name, nname = nname, authors = [], files = []}
+			group = {name = modEntry.name, nname = nname, authors = [], stems = [], files = []}
 			groups.append(group)
 		for author in authors:
 			if(!(author in group["authors"])):
 				group["authors"].append(author)
+		if(!(stem in group["stems"])):
+			group["stems"].append(stem)
 		# Later listings are newer, so the last one is the current version
 		group["latestVersion"] = modEntry.modversion
 		group["latestFile"] = modEntry.download.get_file()
@@ -81,15 +111,19 @@ func buildGroups(modEntries:Array):
 static func sort_index(a, b):
 	return a.index < b.index
 
-func findGroup(nname:String, authors:Array):
+# Prefers the group that has a listing with the same file name stem
+func findGroup(nname:String, authors:Array, stem:String = ""):
+	var found = null
 	for group in groups:
 		if(group["nname"] == nname && authorsOverlap(group["authors"], authors)):
-			return group
-	return null
+			if(stem in group["stems"]):
+				return group
+			if(found == null):
+				found = group
+	return found
 
 # Finds out which files in the mods folder belong to which mod
 func scanInstalled(modEntries:Array):
-	modInfoCache.clear()
 	for group in groups:
 		group["files"] = []
 
@@ -113,19 +147,25 @@ func scanInstalled(modEntries:Array):
 
 		var record = getRecord(file)
 		if(record != null):
-			group = findGroup(record["name"], record["authors"])
+			group = findGroup(record["name"], record["authors"], fileStem(file))
 			version = record["version"]
 			if(group != null):
 				stillInstalled.append(record)
 		if(group == null && byFile.has(file.to_lower())):
 			group = byFile[file.to_lower()][0]
-			version = readModInfo(path).get("modversion", byFile[file.to_lower()][1])
+			version = byFile[file.to_lower()][1]
+			# The version in the file name already says enough, only unversioned names need a look inside
+			if(!hasVersionInName(file)):
+				version = readModInfo(path).get("modversion", version)
 		if(group == null && byStem.get(fileStem(file)) != null):
 			group = byStem[fileStem(file)]
 			version = readModInfo(path).get("modversion", "")
 		if(group == null):
+			# Some mods have a wrong name in their json (FoxedBDCC says "FoxLib"),
+			# so the name also has to look like the file name
 			var nname:String = normName(readModInfo(path).get("name", ""))
-			if(byName.get(nname) != null):
+			var stem:String = fileStem(file)
+			if(nname != "" && stem != "" && byName.get(nname) != null && (nname in stem || stem in nname)):
 				group = byName[nname]
 				version = readModInfo(path).get("modversion", "")
 
@@ -144,19 +184,23 @@ static func addUnique(dict:Dictionary, key:String, group):
 	else:
 		dict[key] = group
 
+func hasVersionInName(file:String) -> bool:
+	return fileStem(file) != normName(file.get_basename())
+
 func getRecord(file:String):
 	for record in installed:
-		if(record["file"] == file):
+		if(record["file"].to_lower() == file.to_lower()):
 			return record
 	return null
 
-var modInfoCache:Dictionary = {}
-# Reads name and modversion from the json file inside the mod zip
+var modInfoCache:Dictionary = {} # path -> [modified time, info]
+# Reads name and modversion from the json file inside the mod zip (loads the whole zip, so it's cached)
 func readModInfo(path:String) -> Dictionary:
-	if(modInfoCache.has(path)):
-		return modInfoCache[path]
+	var modifiedTime:int = File.new().get_modified_time(path)
+	if(modInfoCache.has(path) && modInfoCache[path][0] == modifiedTime):
+		return modInfoCache[path][1]
 	var result:Dictionary = {}
-	modInfoCache[path] = result
+	modInfoCache[path] = [modifiedTime, result]
 	if(path.get_extension() != "zip"):
 		return result
 	var gdunzip = GDUnzip.new()
@@ -193,21 +237,22 @@ static func getStatus(group) -> String:
 	return "update"
 
 func isUpToDate(group, file:String, version:String) -> bool:
-	if(file == group["latestFile"]):
-		# A file name with a version in it ("Mod_v1.2.zip") means it's the same version,
-		# the version inside the zip doesn't always match the listing ("0.9.7fix1" vs "0.9.7")
-		if(fileStem(file) != normName(file.get_basename())):
-			return true
-		# Same name for every version ("Mod.zip"), only the version can tell
-		return version == "" || cleanVersion(version) == cleanVersion(group["latestVersion"])
-	return version != "" && cleanVersion(version) == cleanVersion(group["latestVersion"])
+	var isLatestFile:bool = (file.to_lower() == group["latestFile"].to_lower())
+	# A file name with a version in it ("Mod_v1.2.zip") means it's the same version,
+	# the version inside the zip doesn't always match the listing ("0.9.7fix1" vs "0.9.7")
+	if(isLatestFile && hasVersionInName(file)):
+		return true
+	if(version == ""):
+		return isLatestFile
+	# A newer version than the listing (installed by hand) is not outdated
+	return isVersionAtLeast(version, group["latestVersion"])
 
 func recordDownload(group, file:String, version:String):
 	var newInstalled:Array = []
 	for record in installed:
-		if(record["file"] == file):
+		if(record["file"].to_lower() == file.to_lower()):
 			continue
-		if(findGroup(record["name"], record["authors"]) == group):
+		if(findGroup(record["name"], record["authors"], fileStem(record["file"])) == group):
 			continue
 		newInstalled.append(record)
 	newInstalled.append({name = group["nname"], authors = group["authors"], file = file, version = version})
@@ -221,7 +266,8 @@ func getFavoriteIndex(group) -> int:
 	if(group == null):
 		return -1
 	for i in range(favorites.size()):
-		if(favorites[i]["name"] == group["nname"] && authorsOverlap(favorites[i]["authors"], group["authors"])):
+		var stem:String = str(favorites[i].get("stem", ""))
+		if(favorites[i]["name"] == group["nname"] && authorsOverlap(favorites[i]["authors"], group["authors"]) && (stem == "" || stem in group["stems"])):
 			return i
 	return -1
 
@@ -230,7 +276,7 @@ func toggleFavorite(group):
 	if(index >= 0):
 		favorites.remove(index)
 	else:
-		favorites.append({name = group["nname"], authors = group["authors"]})
+		favorites.append({name = group["nname"], authors = group["authors"], stem = group["stems"][-1]})
 	saveState()
 
 func loadState():
@@ -250,9 +296,4 @@ func loadState():
 			installed.append(record)
 
 func saveState():
-	var file = File.new()
-	if(file.open(STATE_PATH, File.WRITE) != OK):
-		Log.printerr("[ModBrowser] Couldn't save "+STATE_PATH)
-		return
-	file.store_string(JSON.print({favorites = favorites, installed = installed}, "\t"))
-	file.close()
+	Util.writeFile(STATE_PATH, JSON.print({favorites = favorites, installed = installed}, "\t"))
